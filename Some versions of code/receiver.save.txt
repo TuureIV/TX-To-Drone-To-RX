@@ -1,0 +1,252 @@
+#include <Arduino.h>
+
+/*
+ * Author: JP Meijers
+ * Date: 2016-02-07
+ * Previous filename: TTN-Mapper-TTNEnschede-V1
+ *
+ * This program is meant to be used with an Arduino UNO or NANO, conencted to an RNxx3 radio module.
+ * It will most likely also work on other compatible Arduino or Arduino compatible boards, like The Things Uno, but might need some slight modifications.
+ *
+ * Transmit a one byte packet via TTN. This happens as fast as possible, while still keeping to
+ * the 1% duty cycle rules enforced by the RN2483's built in LoRaWAN stack. Even though this is
+ * allowed by the radio regulations of the 868MHz band, the fair use policy of TTN may prohibit this.
+ *
+ * CHECK THE RULES BEFORE USING THIS PROGRAM!
+ *
+ * CHANGE ADDRESS!
+ * Change the device address, network (session) key, and app (session) key to the values
+ * that are registered via the TTN dashboard.
+ * The appropriate line is "myLora.initABP(XXX);" or "myLora.initOTAA(XXX);"
+ * When using ABP, it is advised to enable "relax frame count".
+ *
+ * Connect the RN2xx3 as follows:
+ * RN2xx3 -- Arduino
+ * Uart TX -- 10
+ * Uart RX -- 11
+ * Reset -- 12
+ * Vcc -- 3.3V
+ * Gnd -- Gnd
+ *
+ * If you use an Arduino with a free hardware serial port, you can replace
+ * the line "rn2xx3 myLora(mySerial);"
+ * with     "rn2xx3 myLora(SerialX);"
+ * where the parameter is the serial port the RN2xx3 is connected to.
+ * Remember that the serial port should be initialised before calling initTTN().
+ * For best performance the serial port should be set to 57600 baud, which is impossible with a software serial port.
+ * If you use 57600 baud, you can remove the line "myLora.autobaud();".
+ *
+ */
+#include <rn2xx3.h>
+#include <SoftwareSerial.h>
+
+String resp;
+
+bool connected = false;
+bool receive_packets;
+bool forward_packet;
+int i =  0;
+int send_index = 0;
+
+
+String initCommands[16] = {
+    "sys reset",                //Resets the board
+    "radio set mod lora",       //FSK, GFSK, LoRa
+    "radio set freq 868200000", //frequency
+    "radio set pwr 14",         //Power mode 13.5dBm = 22,4mW
+    "radio set sf sf12",        //Automatic spreading factor
+    "radio set afcbw 125",      //Automatic frequency correction
+    "radio set rxbw 250",       //Receiving signal bandwidth
+    "radio set fdev 5000",      //Frequency deviation
+    "radio set prlen 8",        //Preamble length
+    "radio set crc on",         //Cyclic redundancy check
+    "radio set cr 4/8",         //Coding rate
+    "radio set wdt 25000",       //Watch-dog timeout time in ms
+    "radio set sync 12",        //Sync word with a value 0x12
+    "radio set bw 250",         //Operating bandwidth
+    "sys get hweui",            //Shows the hardware EUI needed for LoRaWAN operations
+    "mac pause"                 //Pauses the LoRaWAN functionality
+  };
+
+SoftwareSerial loRaserial(10, 11); // RX, TX
+
+//create an instance of the rn2xx3 library,
+//giving the software serial as port to use
+rn2xx3 loRaRadio(loRaserial);
+
+void status_led_connected(boolean ledStatus)
+{
+  if (ledStatus){
+    digitalWrite(4, HIGH);
+  }
+  else {
+    digitalWrite(4, LOW);
+  }
+}
+
+void RN2483_init(){
+  Serial.println("Initializing LoRa module");
+  int index = 0;
+  while (index<=15){
+    Serial.println("Commad: " + initCommands[index] +": " + loRaRadio.sendRawCommand(initCommands[index]));
+    ++ index;
+  }
+  Serial.println("Radio Module initialized! ");
+}
+
+void send_msg(String data){
+  Serial.println("Sending message: " + data);
+  data = loRaRadio.base16encode(data);
+  Serial.println(loRaRadio.sendRawCommand("radio tx " + data));
+  Serial.println(loRaserial.readStringUntil('\n'));
+  
+}
+
+String receive_message(){
+  String tempResp = "";
+  Serial.println("radio rx 0: " + loRaRadio.sendRawCommand("radio rx 0"));
+  while(loRaserial.available() == 0){
+    }
+  tempResp = loRaserial.readStringUntil('\n');
+  tempResp.remove(0,9);
+  tempResp = loRaRadio.base16decode(tempResp);
+  if (tempResp == "" || tempResp.indexOf("CONNECT") >= 0)
+  {
+    connected = false;
+  }
+  return tempResp;
+}
+
+void initialize_radio()
+{
+  //reset rn2483
+  pinMode(12, OUTPUT);
+  digitalWrite(12, LOW);
+  delay(500);
+  digitalWrite(12, HIGH);
+
+  delay(100); //wait for the RN2xx3's startup message
+  loRaserial.flush();
+
+  //Autobaud the rn2483 module to 9600. The default would otherwise be 57600.
+  loRaRadio.autobaud();
+
+  //check communication with radio
+  String hweui = loRaRadio.hweui();
+  while(hweui.length() != 16)
+  {
+    delay(500);
+    Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the board.");
+    Serial.println(hweui);
+    delay(10000);
+    hweui = loRaRadio.hweui();
+  }
+  Serial.println(loRaRadio.sysver());
+
+  RN2483_init();
+
+}
+
+bool connection_request(){
+    resp = receive_message();
+    if (resp.indexOf("CONNECT") >=0 ){
+      Serial.println("Connection Requested from TX!");
+      send_msg("CONNECTED");
+      return true;
+    }
+  else{
+    return false;
+  }
+}
+
+bool receiving_packets(){
+   String tempS = "";
+   i = 0;
+  if (!receive_packets){
+      Serial.println("Can't receive packets");
+      return false;
+    }
+  
+ 
+  while(receive_packets)
+    {
+      tempS = receive_message();
+      
+      Serial.println("This is what I Saved: " +tempS);
+
+      if (tempS.indexOf("END") >= 0)
+      {
+        Serial.println("Packets received!");
+        receive_packets = false;
+      }
+      if (tempS.indexOf("CONNECT") >= 0 || tempS == "")
+      {
+        Serial.println("Failed receiving packages. Trying to reconnect TX");
+        connected = false;
+        return false;
+      }
+      
+    }
+  return true;
+}
+
+// the setup routine runs once when you press reset:
+void setup()
+{
+  //output LED pin
+  pinMode(2, OUTPUT);
+  pinMode(3, OUTPUT);
+  pinMode(4, OUTPUT);
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600); //serial port to computer
+  loRaserial.begin(57600); //serial port to radio
+  Serial.println("Startup");
+
+  initialize_radio();
+  delay(100);
+}
+
+// the loop routine runs over and over again forever:
+void loop() {
+
+  
+  
+  while (!connected){
+    status_led_connected(false);
+    Serial.println("Waiting for Connection Request.");
+    connected = connection_request();
+    status_led_connected(connected);
+    if (connected){
+      status_led_connected(true);
+      delay(500);
+    }
+  }
+  while(connected){
+    receive_packets = true;
+    forward_packet = false;
+    resp = "";
+    resp = receive_message();
+    Serial.println(resp);
+
+    if (resp.indexOf("CONNECT") >= 0 ){
+      connected = false;
+    }
+  
+    if (resp.indexOf("START") >= 0 && receive_packets){
+      
+      forward_packet = receiving_packets();
+
+      if(forward_packet){   
+        ++send_index;
+        send_msg("RECEIVED: " + String(loRaRadio.getSNR()));
+        forward_packet = false;
+      }
+    }  
+    
+    else {
+      send_msg("Sending/receiving packets failed!");
+      connected = false;
+      status_led_connected(false);
+    }
+  }  
+}

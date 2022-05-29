@@ -1,0 +1,194 @@
+#include <Arduino.h>
+
+/*
+ * Author: JP Meijers
+ * Date: 2016-02-07
+ * Previous filename: TTN-Mapper-TTNEnschede-V1
+ *
+ * This program is meant to be used with an Arduino UNO or NANO, conencted to an RNxx3 radio module.
+ * It will most likely also work on other compatible Arduino or Arduino compatible boards, like The Things Uno, but might need some slight modifications.
+ *
+ * Transmit a one byte packet via TTN. This happens as fast as possible, while still keeping to
+ * the 1% duty cycle rules enforced by the RN2483's built in LoRaWAN stack. Even though this is
+ * allowed by the radio regulations of the 868MHz band, the fair use policy of TTN may prohibit this.
+ *
+ * CHECK THE RULES BEFORE USING THIS PROGRAM!
+ *
+ * CHANGE ADDRESS!
+ * Change the device address, network (session) key, and app (session) key to the values
+ * that are registered via the TTN dashboard.
+ * The appropriate line is "myLora.initABP(XXX);" or "myLora.initOTAA(XXX);"
+ * When using ABP, it is advised to enable "relax frame count".
+ *
+ * Connect the RN2xx3 as follows:
+ * RN2xx3 -- Arduino
+ * Uart TX -- 10
+ * Uart RX -- 11
+ * Reset -- 12
+ * Vcc -- 3.3V
+ * Gnd -- Gnd
+ *
+ * If you use an Arduino with a free hardware serial port, you can replace
+ * the line "rn2xx3 myLora(mySerial);"
+ * with     "rn2xx3 myLora(SerialX);"
+ * where the parameter is the serial port the RN2xx3 is connected to.
+ * Remember that the serial port should be initialised before calling initTTN().
+ * For best performance the serial port should be set to 57600 baud, which is impossible with a software serial port.
+ * If you use 57600 baud, you can remove the line "myLora.autobaud();".
+ *
+ */
+#include <rn2xx3.h>
+#include <SoftwareSerial.h>
+
+SoftwareSerial mySerial(10, 11); // RX, TX
+
+//create an instance of the rn2xx3 library,
+//giving the software serial as port to use
+rn2xx3 myLora(mySerial);
+
+
+void led_on()
+{
+  digitalWrite(13, 1);
+}
+
+void led_off()
+{
+  digitalWrite(13, 0);
+}
+
+void sendcmd(String data){
+  Serial.println(data);
+  mySerial.println(data); 
+  delay(200);
+  Serial.println(mySerial.readStringUntil('\n'));
+}
+
+void RN2483_init(){
+  Serial.println("Initializing LoRa module");
+  sendcmd("sys reset");
+  sendcmd("radio set mod lora");
+  sendcmd("radio set freq 868100000");
+  sendcmd("radio set pwr 14");
+  sendcmd("radio set sf sf12");
+  sendcmd("radio set afcbw 125");
+  sendcmd("radio set rxbw 250");
+  sendcmd("radio set fdev 5000");
+  sendcmd("radio set prlen 8");
+  sendcmd("radio set crc on");
+  sendcmd("radio set cr 4/8");
+  sendcmd("radio set wdt 0");
+  sendcmd("radio set sync 12");
+  sendcmd("radio set bw 250");
+  sendcmd("sys get hweui");
+  sendcmd("mac pause");
+}
+
+
+void initialize_radio()
+{
+  //reset rn2483
+  pinMode(12, OUTPUT);
+  digitalWrite(12, LOW);
+  delay(500);
+  digitalWrite(12, HIGH);
+
+  delay(100); //wait for the RN2xx3's startup message
+  mySerial.flush();
+
+  //Autobaud the rn2483 module to 9600. The default would otherwise be 57600.
+  myLora.autobaud();
+
+  //check communication with radio
+  String hweui = myLora.hweui();
+  while(hweui.length() != 16)
+  {
+    delay(500);
+    Serial.println("Communication with RN2xx3 unsuccessful. Power cycle the board.");
+    Serial.println(hweui);
+    delay(10000);
+    hweui = myLora.hweui();
+  }
+
+  //print out the HWEUI so that we can register it via ttnctl
+  Serial.println("When using OTAA, register this DevEUI: ");
+  Serial.println(myLora.hweui());
+  Serial.println("RN2xx3 firmware version:");
+  Serial.println(myLora.sysver());
+
+  RN2483_init();
+
+}
+
+void sendmsg(String data){
+  Serial.println(data);
+  mySerial.println(data); 
+  delay(200);
+  // radio rx command has two responses, command and transmision
+  Serial.println(mySerial.readStringUntil('\n')); // command response
+  Serial.println(mySerial.readStringUntil('\n')); // transmision repsonse
+}
+
+String strtohex(String data){
+  String sh;
+  char ch;
+  for (int i=0;i<data.length();i++){
+    ch = data.charAt(i);
+    sh += String(ch,HEX);
+  }
+  return sh;
+}
+
+
+// the setup routine runs once when you press reset:
+void setup()
+{
+  //output LED pin
+  pinMode(13, OUTPUT);
+  led_on();
+
+  // Open serial communications and wait for port to open:
+  Serial.begin(9600); //serial port to computer
+  mySerial.begin(57600); //serial port to radio
+  Serial.println("Startup");
+
+  initialize_radio();
+
+  led_off();
+  delay(2000);
+}
+
+
+// void loop() {
+
+//  for(int i='A'; i<='F';i++){
+//   String is;
+//   String temp;
+//   is = String(strtohex("Hello World!"));
+//   is += String(i,HEX);
+//   is += String(i,HEX);
+//   is += String(i,HEX);
+//   is = "radio tx " + is;
+//   sendmsg(is);
+//   delay(500);
+//  }
+
+
+// }
+int x = 0;
+void loop() {
+
+String msg = "#Send messages: " +String(x);
+msg = strtohex(msg);
+//myLora.sendEncoded(msg);
+sendmsg("radio tx " + msg);
+Serial.println("Lähetettiin viesti: " +myLora.base16decode(msg));
+sendcmd("radio rx 0");
+while(Serial.available() == 0) {
+    }
+String resp = mySerial.readStringUntil('\n');
+resp.remove(0,9);
+Serial.println(resp);
+delay(1500);
+++x;
+}
