@@ -51,9 +51,9 @@ bool forward_packets;
 bool receive_packet_response;
 int triedConnIndex = 1;
 
-int i =  0;
 int send_index = 0;
-String packet[5];
+String packet;
+
 
 String initCommands[16] = {
     "sys reset",                //Resets the board
@@ -232,36 +232,36 @@ bool connection_protocol(){
 
 bool receiving_packets(){
    String tempS = "";
-   i = 0;
   if (!receive_packets){
       Serial.println("Can't receive packets");
       return false;
     }
   
   String snr = "";
-  while(receive_packets)
+  while(receive_packets){
+      
+    tempS = receive_message();
+    snr = String(loRaRadio.getSNR());
+    if (tempS.indexOf("P") >= 0)
     {
-      
-      tempS = receive_message();
-      snr = String(loRaRadio.getSNR());
-      packet[i] = tempS;
-      packet[i] = tempS + ",BS:" + snr;
-      Serial.println("This is what I Saved: " + packet[i]);
-      ++ i;
-
-      if (tempS.indexOf("END") >= 0)
-      {
-        Serial.println("Packets received!");
-        receive_packets = false;
-      }
-      if (tempS.indexOf("CONNECT") >= 0 || tempS == "")
-      {
-        Serial.println("Failed receiving packages. Trying to reconnect TX");
-        connected = false;
-        return false;
-      }
-      
+      packet = tempS;
+      packet = tempS + ",BS:" + snr;
+      Serial.println("BS Saved: " + packet);
     }
+
+    if (tempS.indexOf("END") >= 0)
+    { 
+      Serial.println(tempS);
+      Serial.println("Packets received!");
+      receive_packets = false;
+    }
+    if (tempS.indexOf("CONNECT") >= 0 || tempS == "")
+    {
+      Serial.println("Failed receiving packages. Trying to reconnect TX");
+      connected = false;
+      return false;
+    }  
+  }
   return true;
 }
 
@@ -312,18 +312,20 @@ void loop() {
       
       if(forward_packets){
         change_frequency(RXfrequency);
+
+        delay(1000);
         send_msg("START");
-        send_index = 0;
-        while (forward_packets){
-          while(send_index < i ){
-            delay(200);
-            send_msg(packet[send_index]);
-            ++ send_index;
-          }
+
+        delay(200);
+        send_msg(packet);
+
+        delay(200);
+        send_msg("END");
+        
         forward_packets = false;
-        status_led_sending(forward_packets);
-        }
+        status_led_sending(forward_packets); 
       }
+
     if(!forward_packets && !receive_packets){
       resp = receive_message();
       if (resp.indexOf("P") >=0 ){

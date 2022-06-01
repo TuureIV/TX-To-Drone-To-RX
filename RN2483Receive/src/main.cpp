@@ -53,7 +53,7 @@ int triedConnIndex = 1;
 
 int i =  0;
 int send_index = 0;
-String packet[7];
+String packet;
 
 String initCommands[16] = {
     "sys reset",                //Resets the board
@@ -67,7 +67,7 @@ String initCommands[16] = {
     "radio set prlen 8",        //Preamble length
     "radio set crc on",         //Cyclic redundancy check
     "radio set cr 4/8",         //Coding rate
-    "radio set wdt 15000",      //Watch-dog timeout time in ms
+    "radio set wdt 10000",      //Watch-dog timeout time in ms
     "radio set sync 12",        //Sync word with a value 0x12
     "radio set bw 250",         //Operating bandwidth
     "sys get hweui",            //Shows the hardware EUI needed for LoRaWAN operations
@@ -203,33 +203,36 @@ bool connection_protocol(){
 
 bool receiving_packets(){
    String tempS = "";
-   i = 0;
   if (!receive_packets){
       Serial.println("Can't receive packets");
       return false;
     }
-  String snr = ""; String(loRaRadio.getSNR());
-  while(receive_packets)
-    { tempS = "";
-      tempS = receive_message();
-      snr = String(loRaRadio.getSNR());
-      packet[i] = tempS + ",RX:" + snr;
-      Serial.println("This is what I Saved: " + packet[i]);
-      ++ i;
-
-      if (tempS.indexOf("END") >= 0)
-      {
-        Serial.println("Packets received!");
-        receive_packets = false;
-      }
-      if (tempS.indexOf("CONNECT") >= 0 || tempS == "" || tempS == "START")
-      {
-        Serial.println("Failed receiving packages. Trying to reconnect TX");
-        connected = false;
-        return false;
-      }
+  
+  String snr = "";
+  while(receive_packets){
       
+    tempS = receive_message();
+    snr = String(loRaRadio.getSNR());
+    if (tempS.indexOf("P") >= 0)
+    {
+      packet = tempS;
+      packet = tempS + ",BS:" + snr;
+      Serial.println("BS Saved: " + packet);
     }
+
+    if (tempS.indexOf("END") >= 0)
+    { 
+      Serial.println(tempS);
+      Serial.println("Packets received!");
+      receive_packets = false;
+    }
+    if (tempS.indexOf("CONNECT") >= 0 || tempS == "")
+    {
+      Serial.println("Failed receiving packages. Trying to reconnect TX");
+      connected = false;
+      return false;
+    }  
+  }
   return true;
 }
 
@@ -281,7 +284,7 @@ void loop() {
       if(forward_packets){
         send_index = 0;
         String tempMsg = "";
-        tempMsg = packet[3];
+        tempMsg = packet;
         delay(500);
         send_msg(tempMsg);
         forward_packets = false;

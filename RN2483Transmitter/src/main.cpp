@@ -68,7 +68,7 @@ String initCommands[16] = {
     "radio set prlen 8",        //Preamble length
     "radio set crc on",         //Cyclic redundancy check
     "radio set cr 4/8",         //Coding rate
-    "radio set wdt 15000",      //Watch-dog timeout time in ms
+    "radio set wdt 12000",      //Watch-dog timeout time in ms
     "radio set sync 12",        //Sync word with a value 0x12
     "radio set bw 250",         //Operating bandwidth
     "sys get hweui",            //Shows the hardware EUI needed for LoRaWAN operations
@@ -194,7 +194,6 @@ bool connection_request(){
     Serial.println("Trying to connect " + String(connection_tries) + " times.");
     send_msg("CONNECT");
 
-    Serial.println("radio set wdt 15000" + loRaRadio.sendRawCommand("radio set wdt 15000"));
     Serial.println("radio rx 0: " + loRaRadio.sendRawCommand("radio rx 0"));
     
     while(loRaserial.available()== 0){ 
@@ -218,27 +217,20 @@ bool connection_request(){
 bool send_packets(){
   delay(500);
   ++ tried_transmissions;
-  sndMsgIndex = 0;
   String packet = "";
-  full_time = millis();
-  send_time = millis() - full_time;
-  while (sndMsgIndex<=7)
-  {
-    delay(200);
-    if(sndMsgIndex == 0){
-       packet = START_MESSAGE;
-      send_msg(packet);
-    }
-    if(sndMsgIndex ==  7){
-      packet = END_MESSAGE + String(sndMsgIndex);
-      send_msg(packet);
-    }
-    ++ sndMsgIndex;
-    if(sndMsgIndex < 6){
-      packet = "P:" + String(sndMsgIndex) + "/5";
-      send_msg(packet); 
-    }
-  }
+
+  delay(200);   
+  packet = START_MESSAGE;
+  send_msg(packet);
+
+  delay(200);    
+  packet = "P/" + String(tried_transmissions);
+  send_msg(packet); 
+  
+  delay(200);   
+  packet = END_MESSAGE;
+  send_msg(packet);
+
   return true;
 }
 
@@ -272,7 +264,7 @@ void loop() {
     if(send_packets()){
       
       Serial.println("Waiting for received confirmation");
-      delay(2000);
+      delay(1000);
       conf = receive_message();
       Serial.println("conf: " + conf);
 
