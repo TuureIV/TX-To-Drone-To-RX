@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"name": "RN2483Receive",
+			"path": "RN2483Receive"
+		},
+		{
+			"name": "RN2483Transmitter",
+			"path": "RN2483Transmitter"
+		},
+		{
+			"name": "RN2483DRONE",
+			"path": "RN2483DRONE"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.tcc": "cpp"
+		}
+	}
+}
